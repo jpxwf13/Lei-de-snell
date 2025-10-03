@@ -1,0 +1,171 @@
+""" snell_refraction.py A small GitHub-ready single-file Python utility demonstrating Snell's Law and refraction.
+
+Features
+
+compute transmitted angle using Snell's law
+
+detect total internal reflection and compute critical angle
+
+compute Fresnel reflection and transmission coefficients for s- and p-polarizations
+
+command-line interface (CLI) with examples
+
+simple plotting function that saves a PNG showing incident vs transmitted angles and reflectance curves (requires matplotlib)
+
+
+Usage
+
+1. As a library: from snell_refraction import snell_angle, critical_angle, fresnel_coefficients
+
+
+2. From command line (examples): python snell_refraction.py --n1 1.0 --n2 1.5 --theta1 45 --plot
+
+
+
+Requirements
+
+Python 3.8+
+
+Optional: matplotlib for plotting
+
+
+License: MIT Author: Gerado automaticamente pelo ChatGPT """
+
+import math import argparse import sys
+
+try: import matplotlib.pyplot as plt except Exception: plt = None
+
+---- Core physics functions ----
+
+def deg2rad(d): return d * math.pi / 180.0
+
+def rad2deg(r): return r * 180.0 / math.pi
+
+def snell_angle(theta1_deg, n1, n2): """Return transmitted angle theta2 in degrees using Snell's law. If total internal reflection occurs, return None. """ theta1 = deg2rad(theta1_deg) # n1 * sin(theta1) = n2 * sin(theta2) s = n1 * math.sin(theta1) / n2 if abs(s) > 1.0: # Total internal reflection return None theta2 = math.asin(s) return rad2deg(theta2)
+
+def critical_angle(n1, n2): """Return critical angle in degrees for n1->n2 (only meaningful if n1>n2). If no critical angle (n1<=n2) returns None. """ if n1 <= n2: return None # sin(theta_c) = n2 / n1 val = n2 / n1 if val > 1.0: return None return rad2deg(math.asin(val))
+
+def fresnel_coefficients(theta1_deg, n1, n2): """Return a dict with Fresnel reflection (R) and transmission (T) for s- and p-polarizations for given incident angle (degrees).
+
+Returns:
+  {
+    'theta2': (value in degrees) or None if TIR,
+    'R_s': float (0..1) or 1.0 for TIR,
+    'R_p': float,
+    'T_s': float,
+    'T_p': float,
+    'TIR': bool
+  }
+"""
+theta1 = deg2rad(theta1_deg)
+sin_theta2 = n1 * math.sin(theta1) / n2
+if abs(sin_theta2) > 1.0:
+    # TIR
+    return {
+        'theta2': None,
+        'R_s': 1.0,
+        'R_p': 1.0,
+        'T_s': 0.0,
+        'T_p': 0.0,
+        'TIR': True
+    }
+theta2 = math.asin(sin_theta2)
+
+cos1 = math.cos(theta1)
+cos2 = math.cos(theta2)
+
+# s-polarization (perpendicular)
+rs = (n1 * cos1 - n2 * cos2) / (n1 * cos1 + n2 * cos2)
+ts = (2 * n1 * cos1) / (n1 * cos1 + n2 * cos2)
+
+# p-polarization (parallel)
+rp = (n2 * cos1 - n1 * cos2) / (n2 * cos1 + n1 * cos2)
+tp = (2 * n1 * cos1) / (n2 * cos1 + n1 * cos2)
+
+# Power reflectance and transmittance (energy fraction). Use intensity ratios.
+R_s = abs(rs)**2
+R_p = abs(rp)**2
+
+# For transmitted power, account for ratio of refractive indices and cosines
+# T = (n2 * cos2 / (n1 * cos1)) * |t|^2
+T_s = (n2 * cos2) / (n1 * cos1) * abs(ts)**2
+T_p = (n2 * cos2) / (n1 * cos1) * abs(tp)**2
+
+# Numerical safety: clip
+R_s = min(max(R_s, 0.0), 1.0)
+R_p = min(max(R_p, 0.0), 1.0)
+T_s = min(max(T_s, 0.0), 1.0)
+T_p = min(max(T_p, 0.0), 1.0)
+
+return {
+    'theta2': rad2deg(theta2),
+    'R_s': R_s,
+    'R_p': R_p,
+    'T_s': T_s,
+    'T_p': T_p,
+    'TIR': False
+}
+
+---- Plotting utilities ----
+
+def plot_refraction(n1, n2, save_path='snell_plot.png'): """Generate and save a plot of incident vs transmitted angles and reflectance curves. Requires matplotlib. """ if plt is None: raise RuntimeError('matplotlib not available; install it to use plotting features')
+
+thetas = [i * 0.5 for i in range(0, 181 * 2)]  # 0 to 180 by 0.5 deg
+transmitted = []
+R_s_list = []
+R_p_list = []
+
+for th in thetas:
+    res = fresnel_coefficients(th, n1, n2)
+    transmitted.append(res['theta2'] if res['theta2'] is not None else float('nan'))
+    R_s_list.append(res['R_s'])
+    R_p_list.append(res['R_p'])
+
+fig, ax1 = plt.subplots()
+ax1.set_title(f'Snell law & Fresnel (n1={n1}, n2={n2})')
+ax1.set_xlabel('Incident angle (deg)')
+ax1.set_ylabel('Transmitted angle (deg)')
+ax1.plot(thetas, transmitted)
+ax1.grid(True)
+
+ax2 = ax1.twinx()
+ax2.set_ylabel('Reflectance (R)')
+ax2.plot(thetas, R_s_list, label='R_s')
+ax2.plot(thetas, R_p_list, label='R_p')
+ax2.set_ylim(-0.05, 1.05)
+ax2.legend(loc='upper right')
+
+fig.tight_layout()
+fig.savefig(save_path)
+print(f'Plot saved to: {save_path}')
+
+---- CLI ----
+
+def main(argv=None): parser = argparse.ArgumentParser(description='Snell law & refraction utility') parser.add_argument('--n1', type=float, required=True, help='Refractive index of medium 1 (incident)') parser.add_argument('--n2', type=float, required=True, help='Refractive index of medium 2 (transmission)') parser.add_argument('--theta1', type=float, required=True, help='Incident angle in degrees') parser.add_argument('--plot', action='store_true', help='Generate plot (requires matplotlib)') parser.add_argument('--out', type=str, default='snell_plot.png', help='Output filename for plot')
+
+args = parser.parse_args(argv)
+
+print(f'n1={args.n1}, n2={args.n2}, theta1={args.theta1} deg')
+theta2 = snell_angle(args.theta1, args.n1, args.n2)
+if theta2 is None:
+    print('Total internal reflection (no transmitted ray)')
+else:
+    print(f'Transmitted angle theta2 = {theta2:.6f} deg')
+
+crit = critical_angle(args.n1, args.n2)
+if crit is not None:
+    print(f'Critical angle (n1->n2) = {crit:.6f} deg')
+
+fres = fresnel_coefficients(args.theta1, args.n1, args.n2)
+print('Fresnel coefficients:')
+print(f"  R_s = {fres['R_s']:.6f}, R_p = {fres['R_p']:.6f}")
+print(f"  T_s = {fres['T_s']:.6f}, T_p = {fres['T_p']:.6f}")
+
+if args.plot:
+    try:
+        plot_refraction(args.n1, args.n2, args.out)
+    except Exception as e:
+        print('Could not generate plot:', e)
+
+if name == 'main': main()
+
